@@ -16,6 +16,14 @@ class TargetsStore:
     Nama mata kuliah ikut disimpan supaya tampilan web tidak cuma
     menampilkan kode/kelas mentah -- biar gak bingung pas nambahin atau
     ngecek daftar pantauan.
+
+    PENTING: dashboard web (app.py) dan loop background watcher
+    (watcher.py) masing-masing punya instance TargetsStore sendiri di
+    memori proses yang sama. Supaya keduanya selalu lihat data yang
+    sama, tiap method di bawah baca ulang isi file sebelum baca/ubah
+    apa pun -- jadi `targets.json` yang jadi sumber kebenaran, bukan
+    cache di memori. Kalau tidak begini, watcher bisa terus mengira
+    watchlist kosong padahal baru saja ditambahkan lewat dashboard.
     """
 
     def __init__(self, path: str):
@@ -44,6 +52,7 @@ class TargetsStore:
 
     def list(self) -> list[dict]:
         with _lock:
+            self._load()
             return [dict(t) for t in self._targets]
 
     def add(self, kode: str, kelas_nama: str, matakuliah: str = "", dosen: str = "") -> dict:
@@ -53,6 +62,7 @@ class TargetsStore:
         dosen = dosen.strip()
 
         with _lock:
+            self._load()
             for t in self._targets:
                 if t["kode"] == kode and t["kelas_nama"] == kelas_nama:
                     if matakuliah:
@@ -76,6 +86,7 @@ class TargetsStore:
         kode = kode.strip().upper()
         kelas_nama = kelas_nama.strip().upper()
         with _lock:
+            self._load()
             before = len(self._targets)
             self._targets = [
                 t
@@ -89,4 +100,5 @@ class TargetsStore:
 
     def as_key_set(self) -> set[tuple[str, str]]:
         with _lock:
+            self._load()
             return {(t["kode"], t["kelas_nama"]) for t in self._targets}
