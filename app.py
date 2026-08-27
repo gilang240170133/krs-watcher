@@ -11,6 +11,7 @@ from flask import Flask, jsonify, redirect, render_template, request, session, u
 import config
 import watcher
 from portal_client import LoginError, PortalClient, SessionExpiredError
+from settings_store import SettingsStore
 from targets_store import TargetsStore
 
 
@@ -29,6 +30,27 @@ app = Flask(__name__)
 app.secret_key = config.FLASK_SECRET_KEY
 
 store = TargetsStore(config.TARGETS_FILE)
+settings_store = SettingsStore(config.SETTINGS_FILE)
+
+# --- Client portal yang dipakai bareng oleh /api/courses & /api/courses/schedule ---
+# Sengaja dibuat satu instance yang dipakai ulang (bukan bikin baru tiap
+# request) supaya sesi login tidak perlu diulang tiap kali mau ambil jadwal
+# satu-satu per kelas -- kalau tiap request login ulang, bisa lambat dan
+# berisiko portalnya nge-block gara-gara login beruntun.
+_portal_client: PortalClient | None = None
+_portal_client_lock = threading.Lock()
+
+
+def get_portal_client() -> PortalClient:
+    global _portal_client
+    with _portal_client_lock:
+        if _portal_client is None:
+            _portal_client = PortalClient(
+                username=config.PORTAL_USERNAME,
+                password=config.PORTAL_PASSWORD,
+                timeout=config.REQUEST_TIMEOUT_SECONDS,
+            )
+        return _portal_client
 
 
 def login_required(view):
@@ -114,6 +136,27 @@ def api_targets_remove():
     return jsonify({"removed": changed})
 
 
+@app.route("/api/settings", methods=["GET"])
+@login_required
+def api_settings_get():
+    return jsonify(settings_store.get())
+
+
+@app.route("/api/settings", methods=["POST"])
+@login_required
+def api_settings_set():
+    """Simpan filter semester (mata kuliah semester berapa saja yang mau
+    ditampilkan waktu "Ambil daftar dari portal"). Kirim list kosong untuk
+    kembali menampilkan semua semester.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    semesters = data.get("semesters")
+    if semesters is None or not isinstance(semesters, list):
+        return jsonify({"error": "field 'semesters' wajib berupa list"}), 400
+    saved = settings_store.set_semesters(semesters)
+    return jsonify(saved)
+
+
 @app.route("/api/courses")
 @login_required
 def api_courses():
@@ -121,6 +164,8 @@ def api_courses():
 
     Dipakai untuk mengisi daftar pilihan "tambah mata kuliah" di dashboard,
     supaya yang tampil bukan cuma kode tapi juga nama matkul & dosennya.
+    Hasilnya difilter sesuai pengaturan semester yang tersimpan (kalau ada
+    yang dipilih) -- kosong berarti tampilkan semua semester.
     """
     missing = config.missing_required()
     if "PORTAL_USERNAME" in missing or "PORTAL_PASSWORD" in missing:
@@ -130,11 +175,7 @@ def api_courses():
         )
 
     try:
-        client = PortalClient(
-            username=config.PORTAL_USERNAME,
-            password=config.PORTAL_PASSWORD,
-            timeout=config.REQUEST_TIMEOUT_SECONDS,
-        )
+        client = get_portal_client()
         client.ensure_logged_in()
         courses = client.get_offered_courses()
     except (LoginError, SessionExpiredError) as e:
@@ -142,6 +183,10 @@ def api_courses():
     except Exception as e:
         log.exception("Gagal ambil daftar matkul dari portal")
         return jsonify({"error": str(e)}), 500
+
+    selected_semesters = set(settings_store.get_semesters())
+    if selected_semesters:
+        courses = [c for c in courses if str(c["semester"]).strip() in selected_semesters]
 
     return jsonify(
         [
@@ -154,10 +199,44 @@ def api_courses():
                 "sks": c["sks"],
                 "sisa_kuota": c["sisa_kuota"],
                 "semester": c["semester"],
+                "kelas_url": c.get("kelas_url"),
             }
             for c in courses
         ]
     )
+
+
+@app.route("/api/courses/schedule")
+@login_required
+def api_course_schedule():
+    """Ambil jadwal (hari/jam/ruang) satu kelas, dipanggil satu-satu dari
+    dashboard sesudah daftar mata kuliah berhasil ditampilkan.
+
+    Dibuat toleran: kalau kelasnya memang belum ada jadwal di portal, atau
+    halamannya gagal di-parse, balikin jadwal null (bukan error) supaya
+    tampilan depan tidak crash -- cukup tampilkan "jadwal belum tersedia".
+    """
+    kelas_url = (request.args.get("kelas_url") or "").strip()
+    if not kelas_url:
+        return jsonify({"error": "kelas_url wajib diisi"}), 400
+
+    missing = config.missing_required()
+    if "PORTAL_USERNAME" in missing or "PORTAL_PASSWORD" in missing:
+        return (
+            jsonify({"error": "PORTAL_USERNAME / PORTAL_PASSWORD belum diisi di environment"}),
+            400,
+        )
+
+    try:
+        client = get_portal_client()
+        jadwal = client.get_class_schedule(kelas_url)
+    except (LoginError, SessionExpiredError) as e:
+        return jsonify({"error": str(e)}), 502
+    except Exception:
+        log.exception("Gagal ambil jadwal kelas (kelas_url=%s), anggap tidak tersedia.", kelas_url)
+        jadwal = None
+
+    return jsonify({"kelas_url": kelas_url, "jadwal": jadwal})
 
 
 @app.route("/healthz")

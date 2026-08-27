@@ -354,3 +354,117 @@ footer.note {
   .row { flex-wrap: wrap; }
   .row .actions { width: 100%; display: flex; justify-content: flex-end; }
 }
+
+/* --- Jadwal kelas (ditampilkan di bawah info matkul) --- */
+.row .meta .jadwal {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.row .meta .jadwal.loading { font-style: italic; }
+
+.jadwal-chip {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(52, 211, 153, 0.08);
+  border: 1px solid var(--signal-dim);
+  color: var(--ink);
+}
+
+/* --- Tombol "Atur Semester" & badge jumlah semester aktif --- */
+.semester-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: var(--signal);
+  color: #06281f;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  vertical-align: middle;
+}
+
+/* --- Modal pengaturan semester --- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 8, 16, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 50;
+}
+
+.modal-backdrop[hidden] { display: none; }
+
+.modal {
+  width: 100%;
+  max-width: 440px;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px;
+}
+
+.modal h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.modal .hint { margin-top: 0; margin-bottom: 16px; }
+
+.semester-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.semester-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.semester-option:has(input:checked) {
+  border-color: var(--signal);
+  background: rgba(52, 211, 153, 0.08);
+}
+
+.semester-option input {
+  accent-color: var(--signal);
+}
+
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.modal-actions-right {
+  display: flex;
+  gap: 8px;
+}

@@ -51,6 +51,7 @@ REQUEST_TIMEOUT_SECONDS = _get_int("REQUEST_TIMEOUT_SECONDS", 30)
 # --- File penyimpanan (relatif terhadap working directory proses) ---
 STATE_FILE = _get("STATE_FILE", "notify_state.json")
 TARGETS_FILE = _get("TARGETS_FILE", "targets.json")
+SETTINGS_FILE = _get("SETTINGS_FILE", "settings.json")
 LOG_FILE = _get("LOG_FILE", "krs_watcher.log")
 
 # --- Web UI ---

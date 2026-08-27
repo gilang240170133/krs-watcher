@@ -10,12 +10,33 @@
   const courseFilter = document.getElementById("courseFilter");
   const btnLoadCourses = document.getElementById("btnLoadCourses");
 
+  const btnSemesterSettings = document.getElementById("btnSemesterSettings");
+  const semesterBadge = document.getElementById("semesterBadge");
+  const semesterHint = document.getElementById("semesterHint");
+  const semesterModalBackdrop = document.getElementById("semesterModalBackdrop");
+  const semesterGrid = document.getElementById("semesterGrid");
+  const btnSemesterClear = document.getElementById("btnSemesterClear");
+  const btnSemesterCancel = document.getElementById("btnSemesterCancel");
+  const btnSemesterSave = document.getElementById("btnSemesterSave");
+
   let watchedKeys = new Set(
     Array.from(watchedList.querySelectorAll(".row")).map(
       (r) => r.dataset.kode + "|" + r.dataset.kelas
     )
   );
   let lastCourses = [];
+  let selectedSemesters = []; // kosong = semua semester
+
+  // --- Jadwal per-kelas: dimuat satu-satu (lazy) sesudah daftar matkul
+  // tampil, dengan batas jumlah request bersamaan supaya tidak membanjiri
+  // portal / server. Kelas yang memang belum ada jadwalnya di portal akan
+  // ditandai null di cache dan ditampilkan sebagai "belum tersedia", bukan
+  // dianggap error.
+  const MAX_CONCURRENT_SCHEDULE_FETCHES = 3;
+  const jadwalCache = {}; // key -> array | null (null = sudah dicoba, tidak ada)
+  const jadwalLoading = new Set();
+  let scheduleQueue = [];
+  let activeScheduleFetches = 0;
 
   function keyOf(kode, kelas) {
     return kode.trim().toUpperCase() + "|" + kelas.trim().toUpperCase();
@@ -23,6 +44,163 @@
 
   function fmtTime(iso) {
     return iso || "-";
+  }
+
+  // --- Pengaturan filter semester ---
+  const SEMESTER_OPTIONS = Array.from({ length: 14 }, (_, i) => String(i + 1));
+
+  function updateSemesterUi() {
+    if (selectedSemesters.length === 0) {
+      semesterHint.textContent = "Semester: semua";
+      semesterBadge.hidden = true;
+    } else {
+      semesterHint.textContent = "Semester: " + selectedSemesters.join(", ");
+      semesterBadge.hidden = false;
+      semesterBadge.textContent = String(selectedSemesters.length);
+    }
+  }
+
+  function renderSemesterGrid() {
+    semesterGrid.innerHTML = SEMESTER_OPTIONS.map((s) => {
+      const checked = selectedSemesters.includes(s) ? "checked" : "";
+      return (
+        '<label class="semester-option">' +
+        '<input type="checkbox" value="' + s + '" ' + checked + ">" +
+        "Smt " + s +
+        "</label>"
+      );
+    }).join("");
+  }
+
+  async function loadSemesterSettings() {
+    try {
+      const res = await fetch("/api/settings");
+      if (res.ok) {
+        const data = await res.json();
+        selectedSemesters = (data.semesters || []).map(String);
+      }
+    } catch (e) {
+      // Gagal ambil pengaturan -> anggap saja "semua semester", jangan blokir UI.
+    }
+    updateSemesterUi();
+  }
+
+  function closeSemesterModal() {
+    semesterModalBackdrop.hidden = true;
+  }
+
+  btnSemesterSettings.addEventListener("click", () => {
+    renderSemesterGrid();
+    semesterModalBackdrop.hidden = false;
+  });
+
+  btnSemesterCancel.addEventListener("click", closeSemesterModal);
+
+  semesterModalBackdrop.addEventListener("click", (e) => {
+    if (e.target === semesterModalBackdrop) closeSemesterModal();
+  });
+
+  btnSemesterClear.addEventListener("click", () => {
+    semesterGrid
+      .querySelectorAll('input[type="checkbox"]')
+      .forEach((cb) => (cb.checked = false));
+  });
+
+  btnSemesterSave.addEventListener("click", async () => {
+    const checked = Array.from(
+      semesterGrid.querySelectorAll('input[type="checkbox"]:checked')
+    ).map((cb) => cb.value);
+
+    btnSemesterSave.disabled = true;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ semesters: checked }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Gagal menyimpan pengaturan semester: " + (err.error || res.status));
+        return;
+      }
+      const data = await res.json();
+      selectedSemesters = (data.semesters || []).map(String);
+      updateSemesterUi();
+      closeSemesterModal();
+    } catch (e) {
+      alert("Gagal menghubungi server.");
+    } finally {
+      btnSemesterSave.disabled = false;
+    }
+  });
+
+  // --- Jadwal per-kelas (lazy load dengan batas concurrency) ---
+  function jadwalHtml(jadwal) {
+    if (jadwal === undefined) {
+      return '<div class="jadwal loading">Memuat jadwal&hellip;</div>';
+    }
+    if (!jadwal || jadwal.length === 0) {
+      return '<div class="jadwal">Jadwal belum tersedia di portal</div>';
+    }
+    const chips = jadwal
+      .map((j) => {
+        const parts = [j.hari, j.jam, j.ruang].filter(Boolean);
+        return '<span class="jadwal-chip">' + parts.join(" &middot; ") + "</span>";
+      })
+      .join("");
+    return '<div class="jadwal">' + chips + "</div>";
+  }
+
+  function updateJadwalInDom(key) {
+    const rows = courseList.querySelectorAll(".row");
+    for (const row of rows) {
+      if (keyOf(row.dataset.kode, row.dataset.kelas) === key) {
+        const jadwalEl = row.querySelector(".jadwal");
+        if (jadwalEl) jadwalEl.outerHTML = jadwalHtml(jadwalCache[key]);
+        break;
+      }
+    }
+  }
+
+  async function fetchSchedule(key, kelasUrl) {
+    try {
+      const res = await fetch("/api/courses/schedule?kelas_url=" + encodeURIComponent(kelasUrl));
+      if (res.ok) {
+        const data = await res.json();
+        jadwalCache[key] = data.jadwal || null;
+      } else {
+        // Anggap tidak tersedia daripada nyangkut di "memuat..." selamanya.
+        jadwalCache[key] = null;
+      }
+    } catch (e) {
+      jadwalCache[key] = null;
+    } finally {
+      jadwalLoading.delete(key);
+      updateJadwalInDom(key);
+    }
+  }
+
+  function pumpScheduleQueue() {
+    while (activeScheduleFetches < MAX_CONCURRENT_SCHEDULE_FETCHES && scheduleQueue.length > 0) {
+      const item = scheduleQueue.shift();
+      activeScheduleFetches++;
+      fetchSchedule(item.key, item.kelasUrl).finally(() => {
+        activeScheduleFetches--;
+        pumpScheduleQueue();
+      });
+    }
+  }
+
+  function queueScheduleFetches(courses) {
+    courses.forEach((c) => {
+      if (!c.kelas_url) return; // tidak ada link detail kelas -> gak ada cara ambil jadwalnya
+      const key = keyOf(c.kode, c.kelas_nama);
+      if (Object.prototype.hasOwnProperty.call(jadwalCache, key)) return;
+      if (jadwalLoading.has(key)) return;
+      jadwalLoading.add(key);
+      scheduleQueue.push({ key, kelasUrl: c.kelas_url });
+    });
+    pumpScheduleQueue();
   }
 
   async function refreshStatus() {
@@ -160,8 +338,10 @@
   function courseRowHtml(c) {
     const key = keyOf(c.kode, c.kelas_nama);
     const already = watchedKeys.has(key);
+    const jadwal = jadwalCache[key];
     return (
-      '<div class="row" data-kode="' + c.kode + '" data-kelas="' + c.kelas_nama + '">' +
+      '<div class="row" data-kode="' + c.kode + '" data-kelas="' + c.kelas_nama +
+      '" data-kelas-url="' + (c.kelas_url || "") + '">' +
       quotaBoxHtml(c.sisa_kuota) +
       '<div class="meta">' +
       '<div class="title">' + c.matakuliah + "</div>" +
@@ -169,8 +349,11 @@
       '<span class="chip">' + c.kode + "</span>" +
       '<span class="chip">Kelas ' + c.kelas_nama + "</span>" +
       '<span class="chip">' + c.sks + " sks</span>" +
+      (c.semester ? '<span class="chip">Smt ' + c.semester + "</span>" : "") +
       (c.dosen ? "<span>" + c.dosen + "</span>" : "") +
-      "</div></div>" +
+      "</div>" +
+      jadwalHtml(jadwal) +
+      "</div>" +
       '<div class="actions">' +
       (already
         ? '<button disabled>Sudah dipantau</button>'
@@ -197,6 +380,7 @@
     }
 
     courseList.innerHTML = filtered.map(courseRowHtml).join("");
+    queueScheduleFetches(filtered);
   }
 
   courseList.addEventListener("click", (e) => {
@@ -228,6 +412,10 @@
         return;
       }
       lastCourses = data;
+      // Daftar baru -> jadwal lama sudah tidak relevan, mulai lagi dari kosong.
+      Object.keys(jadwalCache).forEach((k) => delete jadwalCache[k]);
+      jadwalLoading.clear();
+      scheduleQueue = [];
       applyQuotaToWatchedRows(data);
       courseFilter.disabled = false;
       renderCourseList(courseFilter.value);
@@ -241,4 +429,5 @@
 
   refreshStatus();
   setInterval(refreshStatus, 8000);
+  loadSemesterSettings();
 })();
