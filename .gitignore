@@ -1,0 +1,7 @@
+notify_state.json
+krs_watcher.log
+venv/
+__pycache__/
+*.pyc
+config.py
+
