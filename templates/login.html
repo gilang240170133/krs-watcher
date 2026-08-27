@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Masuk &middot; KRS Watcher</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="card login-card">
+      <div class="eyebrow">KRS Watcher</div>
+      <h1>Masuk ke dashboard</h1>
+      <form method="post">
+        <input type="password" name="password" placeholder="Password dashboard" autofocus required>
+        {% if error %}<div class="login-error">{{ error }}</div>{% endif %}
+        <button class="primary" type="submit">Masuk</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

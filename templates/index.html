@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KRS Watcher</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="eyebrow">Portal Unimal &middot; Pemantau Kuota</div>
+        <h1>KRS Watcher</h1>
+      </div>
+      <div class="statuspill" id="statuspill">
+        <span class="pulse-dot" id="pulseDot"></span>
+        <span id="statusText">memuat status&hellip;</span>
+      </div>
+    </div>
+
+    {% if missing_env %}
+    <div class="banner">
+      Environment variable belum lengkap: <code>{{ missing_env|join(', ') }}</code>.
+      Watcher tidak akan jalan sampai semua terisi. Lihat <code>.env.example</code>.
+    </div>
+    {% endif %}
+
+    {% if not web_ui_protected %}
+    <div class="banner">
+      Dashboard ini belum dilindungi password (<code>WEB_UI_PASSWORD</code> kosong).
+      Siapa pun yang tahu URL-nya bisa mengubah watchlist kamu &mdash; disarankan diisi
+      sebelum dipakai online.
+    </div>
+    {% endif %}
+
+    <section class="block">
+      <h2>Sedang dipantau <span class="count" id="watchedCount">{{ targets|length }}</span></h2>
+      <div class="card" id="watchedList">
+        {% if targets %}
+          {% for t in targets %}
+          <div class="row" data-kode="{{ t.kode }}" data-kelas="{{ t.kelas_nama }}">
+            <div class="quota" title="Kuota belum dicek">&mdash;</div>
+            <div class="meta">
+              <div class="title">{{ t.matakuliah or 'Nama menyusul setelah cek pertama' }}</div>
+              <div class="sub">
+                <span class="chip">{{ t.kode }}</span>
+                <span class="chip">Kelas {{ t.kelas_nama }}</span>
+                {% if t.dosen %}<span>{{ t.dosen }}</span>{% endif %}
+              </div>
+            </div>
+            <div class="actions">
+              <button class="danger-ghost btn-remove">Hapus</button>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty">Belum ada mata kuliah yang dipantau. Tambahkan dari daftar di bawah.</div>
+        {% endif %}
+      </div>
+      <div class="hint">Nama & dosen otomatis terisi/diperbarui setiap kali watcher berhasil mengecek portal.</div>
+    </section>
+
+    <section class="block">
+      <h2>Tambah mata kuliah</h2>
+      <div class="searchbar">
+        <input type="text" id="courseFilter" placeholder="Cari kode atau nama mata kuliah&hellip;" disabled>
+        <button class="primary" id="btnLoadCourses">Ambil daftar dari portal</button>
+      </div>
+      <div class="card" id="courseList">
+        <div class="empty" id="courseEmpty">Klik &quot;Ambil daftar dari portal&quot; untuk melihat mata kuliah yang sedang ditawarkan.</div>
+      </div>
+    </section>
+
+    <footer class="note">Dijalankan otomatis di background &middot; notifikasi dikirim lewat Telegram</footer>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

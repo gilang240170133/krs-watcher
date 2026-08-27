@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+notify_state.json
+targets.json
+krs_watcher.log
+.venv/
